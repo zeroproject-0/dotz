@@ -48,10 +48,15 @@ fn create_symlinks(files: ReadDir, destination: &Path) {
 	for file in files {
 		let file = file.unwrap();
 		let file_path = file.path();
+		let file_name = file_path.file_name().unwrap();
+
+		if file_name == ".git" || file_name == ".gitignore" {
+			continue;
+		}
 
 		if file.file_type().unwrap().is_dir() {
 			let files = fs::read_dir(&file_path).unwrap();
-			let dest = destination.clone().join(file_path.file_name().unwrap());
+			let dest = destination.clone().join(file_name);
 
 			match fs::create_dir(&dest) {
 				Ok(_) => {
@@ -61,10 +66,10 @@ fn create_symlinks(files: ReadDir, destination: &Path) {
 			};
 
 			create_symlinks(files, &dest);
-			return;
+			continue;
 		}
 
-		let dest = Path::new(&destination).join(file_path.file_name().unwrap());
+		let dest = Path::new(&destination).join(file_name);
 
 		println!("Linking {} to {}", file_path.display(), dest.display());
 
