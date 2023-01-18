@@ -66,8 +66,10 @@ fn main() {
 		return;
 	}
 
+	let ignore_files = get_ignore_files(path.clone());
+
 	match fs::read_dir(path) {
-		Ok(files) => create_symlinks(files, &destination, force),
+		Ok(files) => create_symlinks(files, &destination, &ignore_files, force),
 		Err(_) => {
 			show_help();
 			return;
@@ -75,13 +77,14 @@ fn main() {
 	};
 }
 
-fn create_symlinks(files: ReadDir, destination: &Path, force: bool) {
+fn create_symlinks(files: ReadDir, destination: &Path, ignore_files: &Vec<String>, force: bool) {
 	for file in files {
 		let file = file.unwrap();
 		let file_path = file.path();
 		let file_name = file_path.file_name().unwrap();
 
-		if file_name == ".git" || file_name == ".gitignore" {
+		if ignore_files.contains(&file_name.to_str().unwrap().to_string()) {
+			println!("Ignoring {}", file_path.display());
 			continue;
 		}
 
@@ -96,7 +99,7 @@ fn create_symlinks(files: ReadDir, destination: &Path, force: bool) {
 				Err(_) => {}
 			};
 
-			create_symlinks(files, &dest, force);
+			create_symlinks(files, &dest, &ignore_files, force);
 			continue;
 		}
 
@@ -129,6 +132,24 @@ fn create_symlinks(files: ReadDir, destination: &Path, force: bool) {
 			}
 		};
 	}
+}
+
+fn get_ignore_files(path: PathBuf) -> Vec<String> {
+	let mut ignore_files = Vec::new();
+
+	let ignore_path = path.join(".dotzignore");
+
+	if !ignore_path.exists() {
+		return ignore_files;
+	}
+
+	let ignore_file = fs::read_to_string(ignore_path).unwrap();
+
+	for line in ignore_file.lines() {
+		ignore_files.push(line.trim().to_string());
+	}
+
+	ignore_files
 }
 
 fn show_help() {
