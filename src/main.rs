@@ -376,15 +376,23 @@ fn get_ignore_files(path: PathBuf) -> Vec<String> {
 fn show_help() {
 	println!("dotz - A simple dotfile manager");
 	println!("");
+	println!("");
+	println!("Commands:");
+	println!("");
+	println!("repo\t\tCreate a new dotfile from a git repository (need git installed)");
+	println!("");
 	println!("Options:");
 	println!("");
 	println!("-h, --help\tShow this help message");
 	println!("-f, --force\tForce overwrite of existing files");
+	println!("-s, --static\tCreate static files");
+	println!("--verbose\tCreate static files");
 	println!("");
 	println!("");
-	println!("Usage: dotz [options] [path] [destination]");
+	println!("Usage: dotz [options] [command] [path/] [destination]");
 	println!("");
 	println!("");
 	println!("[path] is the directory where the dotfiles are located");
-	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME)");
+	println!("[repo] is the link to the git repository");
+	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME) (not configurable in repo mode)");
 }
