@@ -393,6 +393,16 @@ fn show_help() {
 	println!("");
 	println!("");
 	println!("[path] is the directory where the dotfiles are located");
-	println!("[repo] is the link to the git repository");
-	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME) (not configurable in repo mode)");
+	println!("[repo] is the link to the git repository (only for repo mode and default path to clone is $HOME/.dotfiles)");
+	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME) \n\t(not configurable in repo mode)");
+	println!("");
+	println!("");
+	println!("Examples:");
+	println!("\t # dotz -f -s /home/user/.dotfiles/ /home/user/");
+	println!("\t # dotz -f --verbose -s /home/user/.dotfiles/ /home/user/");
+	println!("\t # dotz /home/user/.dotfiles/");
+	println!("\t # dotz .");
+	println!("\t # dotz repo https://github.com/zeroproject-0/.dotfiles.git");
+	println!("\t # dotz -f -s --verbose repo https://github.com/zeroproject-0/.dotfiles.git");
+	println!("\t # dotz --help");
 }
