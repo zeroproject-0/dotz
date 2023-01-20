@@ -386,7 +386,7 @@ fn show_help() {
 	println!("-h, --help\tShow this help message");
 	println!("-f, --force\tForce overwrite of existing files");
 	println!("-s, --static\tCreate static files");
-	println!("--verbose\tCreate static files");
+	println!("--verbose\tShow verbose output");
 	println!("");
 	println!("");
 	println!("Usage: dotz [options] [command] [path/] [destination]");
