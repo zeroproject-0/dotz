@@ -99,6 +99,12 @@ fn main() -> Result<(), Errors> {
 		};
 	}
 
+	if !path.exists() {
+		return Err(Errors::InvalidPath {
+			message: String::from(format!("Path {} does not exist", path.display())),
+		});
+	}
+
 	if !path.is_absolute() {
 		path = path.canonicalize().unwrap();
 	}
@@ -115,6 +121,12 @@ fn main() -> Result<(), Errors> {
 	} else {
 		PathBuf::from(home)
 	};
+
+	if !destination.exists() {
+		return Err(Errors::InvalidPath {
+			message: String::from("Destination directory does not exist"),
+		});
+	}
 
 	if args.len() > 0 {
 		show_help();
@@ -397,4 +409,120 @@ fn show_help() {
 	println!("\t # dotz repo https://github.com/zeroproject-0/.dotfiles.git ./dotfiles ~/.config");
 	println!("\t # dotz -f -s --verbose repo https://github.com/zeroproject-0/.dotfiles.git");
 	println!("\t # dotz --help");
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use assert_cli;
+	use std::fs;
+
+	#[test]
+	fn test_get_ignore_files() {
+		let path = PathBuf::from("./tests/");
+		let ignore_files = get_ignore_files(&path);
+
+		assert_eq!(ignore_files.len(), 2);
+		assert_eq!(ignore_files[0], ".dotzignore");
+		assert_eq!(ignore_files[1], "test");
+	}
+
+	#[test]
+	fn test_verify_argument() {
+		let mut args = VecDeque::new();
+		args.push_back(String::from("test"));
+		args.push_back(String::from("test2"));
+		args.push_back(String::from("test3"));
+
+		let names = vec!["test", "test2"];
+
+		assert_eq!(verify_argument(&mut args, names), true);
+		assert_eq!(args.len(), 1);
+		assert_eq!(args[0], "test3");
+	}
+
+	#[test]
+	fn test_cli_help() {
+		assert_cli::Assert::main_binary()
+			.with_args(&["--help"])
+			.succeeds()
+			.unwrap();
+	}
+
+	#[test]
+	fn test_cli_version() {
+		assert_cli::Assert::main_binary()
+			.with_args(&["--version"])
+			.succeeds()
+			.stdout()
+			.is(format!("v{}", env!("CARGO_PKG_VERSION")).as_str())
+			.unwrap();
+	}
+
+	#[test]
+	fn test_cli_repo_without_args() {
+		assert_cli::Assert::main_binary()
+			.with_args(&["repo"])
+			.fails()
+			.unwrap()
+	}
+
+	#[test]
+	fn test_cli_repo_with_args() {
+		let repo_path = PathBuf::from("./tests/.dotfilesRepo");
+		let dot_path = PathBuf::from("./tests/.dotfiles");
+		if repo_path.exists() {
+			fs::remove_dir_all(repo_path).unwrap();
+		}
+		if dot_path.exists() {
+			fs::remove_dir_all(dot_path).unwrap();
+		}
+		fs::create_dir("./tests/.dotfilesRepo").unwrap();
+		fs::create_dir("./tests/.dotfiles").unwrap();
+		assert_cli::Assert::main_binary()
+			.with_args(&[
+				"repo",
+				"https://github.com/zeroproject-0/.dotfiles.git",
+				"./tests/.dotfilesRepo",
+				"./tests/.dotfiles",
+			])
+			.succeeds()
+			.unwrap()
+	}
+
+	#[test]
+	fn test_cli_repo_with_args_fails() {
+		assert_cli::Assert::main_binary()
+			.with_args(&[
+				"repo",
+				"https://github.com/zeroproject-0/.dotfiles.git",
+				"./tests/.dotfilesRepo",
+				"./tests/notExist",
+			])
+			.fails()
+			.unwrap()
+	}
+
+	#[test]
+	fn test_cli_force() {
+		assert_cli::Assert::main_binary()
+			.with_args(&["-f", "./tests/.dot", "./tests/.dotDest"])
+			.succeeds()
+			.unwrap()
+	}
+
+	#[test]
+	fn test_cli_static() {
+		assert_cli::Assert::main_binary()
+			.with_args(&["-f", "-s", "./tests/.dot", "./tests/.dotDest"])
+			.execute()
+			.and_then(|_| {
+				let file_type = fs::metadata("./tests/.dotDest/test.conf")
+					.unwrap()
+					.file_type();
+				assert!(!fs::FileType::is_symlink(&file_type));
+				Ok(())
+			})
+			.unwrap()
+	}
 }
