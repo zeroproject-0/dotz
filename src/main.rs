@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::env;
-use std::fs;
-use std::fs::{copy, remove_dir_all, remove_file, ReadDir};
+use std::fs::{
+	copy, create_dir, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file, ReadDir,
+};
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug)]
 struct Config {
-	destination: PathBuf,
 	force: bool,
 	verbose: bool,
 	static_files: bool,
@@ -28,31 +28,19 @@ fn main() {
 		return;
 	}
 
-	let mut config = Config::default();
-
-	config.force = args.contains(&"-f".to_string()) || args.contains(&"--force".to_string());
-
-	if config.force {
-		args.retain(|x| verify_argument(vec!["-f", "--force"], x));
+	if args.contains(&String::from("-v")) || args.contains(&String::from("--version")) {
+		const VERSION: &str = env!("CARGO_PKG_VERSION");
+		println!("v{}", VERSION);
+		return;
 	}
 
-	config.static_files = args.contains(&"-s".to_string()) || args.contains(&"--static".to_string());
+	let config = Config {
+		force: verify_argument(&mut args, vec!["-f", "--force"]),
+		verbose: verify_argument(&mut args, vec!["--verbose"]),
+		static_files: verify_argument(&mut args, vec!["-s", "--static"]),
+	};
 
-	if config.static_files {
-		args.retain(|x| verify_argument(vec!["-s", "--static"], x));
-	}
-
-	config.verbose = args.contains(&"--verbose".to_string());
-
-	if config.verbose {
-		args.retain(|x| verify_argument(vec!["--verbose"], x));
-	}
-
-	let is_repo = args.contains(&"repo".to_string());
-
-	if is_repo {
-		args.retain(|x| verify_argument(vec!["repo"], x));
-	}
+	let is_repo = verify_argument(&mut args, vec!["repo"]);
 
 	let home = match env::var_os("HOME") {
 		Some(home) => home.into_string().unwrap(),
@@ -62,142 +50,100 @@ fn main() {
 		}
 	};
 
+	let mut repo_link = String::new();
+
 	if is_repo {
-		let link_repo = match args.pop_front() {
-			Some(link_repo) => link_repo,
-			None => {
-				show_help();
-				return;
-			}
-		};
+		if let Some(repo) = args.pop_front() {
+			repo_link = repo;
+		} else {
+			show_help();
+			return;
+		}
+	}
 
-		let path_repo = PathBuf::from(&home).join(".dotfiles");
+	let mut path = if let Some(path_arg) = args.pop_front() {
+		PathBuf::from(path_arg)
+	} else {
+		if is_repo {
+			PathBuf::from(&home)
+				.join(".dotfiles")
+				.canonicalize()
+				.unwrap()
+		} else {
+			show_help();
+			return;
+		}
+	};
 
-		let git = Command::new("git")
-			.arg("clone")
-			.arg("--depth")
-			.arg("1")
-			.arg(&link_repo)
-			.arg(&path_repo)
-			.status();
-
-		match git {
-			Ok(res) => {
-				if res.success() {
-					println!("Repository cloned successfully");
-
-					let ignore_files = get_ignore_files(path_repo.clone());
-
-					config.destination = PathBuf::from(&home);
-
-					match fs::read_dir(path_repo) {
-						Ok(files) => {
-							if config.static_files {
-								create_statics(files, &ignore_files, &config);
-							} else {
-								create_symlinks(files, &ignore_files, &config);
-							}
-							println!("Done!");
-						}
-						Err(_) => {
-							show_help();
-							return;
-						}
-					};
-				} else {
-					if path_repo.exists() && config.force {
-						match remove_dir_all(&path_repo) {
-							Ok(()) => {
-								if config.verbose {
-									println!("Removing existing file {}", path_repo.display())
-								}
-							}
-							Err(e) => {
-								println!(
-									"Failed to remove existing file {}: {}",
-									path_repo.display(),
-									e
-								);
-							}
-						}
-
-						let git = Command::new("git")
-							.arg("clone")
-							.arg("--depth")
-							.arg("1")
-							.arg(&link_repo)
-							.arg(&path_repo)
-							.status();
-
-						match git {
-							Ok(res) => {
-								if res.success() {
-									println!("Repository cloned successfully");
-
-									let ignore_files = get_ignore_files(path_repo.clone());
-
-									config.destination = PathBuf::from(&home);
-									let files = fs::read_dir(path_repo).unwrap();
-
-									if config.static_files {
-										create_statics(files, &ignore_files, &config);
-									} else {
-										create_symlinks(files, &ignore_files, &config);
-									}
-								} else {
-									println!("Error trying to clone repository");
-								}
-							}
-							Err(_) => {
-								println!("Could not clone repository");
-								return;
-							}
-						}
-					}
+	if is_repo && !path.exists() {
+		match create_dir_all(&path) {
+			Ok(_) => {
+				if config.verbose {
+					println!("Created {}", path.display());
 				}
 			}
 			Err(_) => {
-				println!("Could not clone repository");
-				return;
-			}
-		}
-
-		return;
-	}
-
-	let path = PathBuf::from(args.pop_front().unwrap())
-		.canonicalize()
-		.unwrap_or_default();
-
-	config.destination = PathBuf::from(home);
-
-	if args.len() == 1 {
-		config.destination = match Path::new(args.pop_front().unwrap().as_str()).canonicalize() {
-			Ok(path) => path,
-			Err(_) => {
-				show_help();
+				if config.verbose {
+					println!("Could not create {}", path.display());
+				}
 				return;
 			}
 		};
-
-		println!("Destination: {}", config.destination.display());
 	}
+
+	if !path.is_absolute() {
+		path = path.canonicalize().unwrap();
+	}
+
+	let destination = if let Some(dest) = args.pop_front() {
+		let dest = PathBuf::from(dest);
+		if !dest.exists() {
+			println!("Destination directory does not exist");
+			return;
+		}
+
+		dest.canonicalize().unwrap()
+	} else {
+		PathBuf::from(home)
+	};
 
 	if args.len() > 0 {
 		show_help();
 		return;
 	}
 
-	let ignore_files = get_ignore_files(path.clone());
+	if is_repo {
+		if config.force && path.exists() {
+			match remove_dir_all(&path) {
+				Ok(_) => {
+					if config.verbose {
+						println!("Removed {}", path.display());
+					}
+				}
+				Err(_) => {
+					if config.verbose {
+						println!("Could not remove {}", path.display());
+					}
+					return;
+				}
+			};
+		}
 
-	match fs::read_dir(path) {
+		if !clone_repo(&repo_link, &path.to_str().unwrap().to_string()) {
+			return;
+		}
+	}
+
+	let ignore_files = get_ignore_files(&path);
+
+	match read_dir(path) {
 		Ok(files) => {
 			if config.static_files {
-				create_statics(files, &ignore_files, &config);
+				files_scope(&create_statics, files, &ignore_files, destination, &config);
 			} else {
-				create_symlinks(files, &ignore_files, &config);
+				files_scope(&create_symlinks, files, &ignore_files, destination, &config);
 			}
-			println!("Done!");
+			println!("Finished");
 		}
 		Err(_) => {
 			show_help();
@@ -206,16 +152,40 @@ fn main() {
 	};
 }
 
-fn verify_argument(names: Vec<&str>, arg: &String) -> bool {
-	let mut res = true;
-	for name in names {
-		res = res && arg != name;
+fn clone_repo(link: &String, dest: &String) -> bool {
+	let mut success = false;
+	let git = Command::new("git")
+		.arg("clone")
+		.arg(&link)
+		.arg(&dest)
+		.status();
+
+	match git {
+		Ok(res) => {
+			success = res.success();
+			if success {
+				println!("Repository cloned successfully");
+			} else {
+				println!("Failed to clone repository");
+			}
+		}
+		Err(_) => {
+			println!("Failed to clone repository");
+		}
 	}
 
-	res
+	success
 }
 
-fn create_statics(files: ReadDir, ignore_files: &Vec<String>, config: &Config) {
+fn files_scope<F>(
+	func: &F,
+	files: ReadDir,
+	ignore_files: &Vec<String>,
+	destination: PathBuf,
+	config: &Config,
+) where
+	F: Fn(PathBuf, PathBuf) -> bool,
+{
 	for file in files {
 		let file = file.unwrap();
 		let file_path = file.path();
@@ -229,24 +199,24 @@ fn create_statics(files: ReadDir, ignore_files: &Vec<String>, config: &Config) {
 		}
 
 		if file.file_type().unwrap().is_dir() {
-			let files = fs::read_dir(&file_path).unwrap();
-			let mut aux_config = config.clone();
-			aux_config.destination = config.destination.join(file_name);
+			let files = read_dir(&file_path).unwrap();
 
-			match fs::create_dir(&aux_config.destination) {
+			let dest = destination.join(file_name);
+
+			match create_dir(&dest) {
 				Ok(_) => {
 					if config.verbose {
-						println!("Created directory {}", aux_config.destination.display());
+						println!("Created directory {}", dest.display());
 					}
 				}
 				Err(_) => {}
 			};
 
-			create_statics(files, ignore_files, &aux_config);
+			files_scope(func, files, ignore_files, dest, &config);
 			continue;
 		}
 
-		let dest = Path::new(&config.destination).join(file_name);
+		let dest = Path::new(&destination).join(file_name);
 
 		if dest.exists() && config.force {
 			match remove_file(&dest) {
@@ -255,8 +225,8 @@ fn create_statics(files: ReadDir, ignore_files: &Vec<String>, config: &Config) {
 						println!("Removing existing file {}", dest.display())
 					}
 				}
-				Err(e) => {
-					println!("Failed to remove existing file {}: {}", dest.display(), e);
+				Err(_) => {
+					println!("Failed to remove existing file {}", dest.display());
 					continue;
 				}
 			}
@@ -270,88 +240,73 @@ fn create_statics(files: ReadDir, ignore_files: &Vec<String>, config: &Config) {
 			);
 		}
 
-		match copy(&file_path, &dest) {
-			Ok(_) => (),
-			Err(e) => {
-				println!(
-					"Failed to link {} to {}: {}",
-					file_path.display(),
-					dest.display(),
-					e
-				);
-				continue;
-			}
+		if !func(file_path.to_owned(), dest.to_owned()) {
+			println!(
+				"Failed to create file {} to {}",
+				file_path.display(),
+				dest.display(),
+			);
+			continue;
 		};
 	}
 }
 
-fn create_symlinks(files: ReadDir, ignore_files: &Vec<String>, config: &Config) {
-	for file in files {
-		let file = file.unwrap();
-		let file_path = file.path();
-		let file_name = file_path.file_name().unwrap();
-
-		if ignore_files.contains(&file_name.to_str().unwrap().to_string()) {
-			if config.verbose {
-				println!("Ignoring {}", file_path.display());
-			}
-			continue;
+fn verify_argument(args: &mut VecDeque<String>, names: Vec<&str>) -> bool {
+	let verify = |x: &String| {
+		let mut res = true;
+		for name in &names {
+			res = res && x != name;
 		}
 
-		if file.file_type().unwrap().is_dir() {
-			let files = fs::read_dir(&file_path).unwrap();
-			let mut aux_config = config.clone();
-			aux_config.destination = config.destination.join(file_name);
+		res
+	};
+	let args_length = args.len();
 
-			match fs::create_dir(&aux_config.destination) {
-				Ok(_) => {
-					if config.verbose {
-						println!("Created directory {}", aux_config.destination.display());
-					}
-				}
-				Err(_) => {}
-			};
+	args.retain(verify);
 
-			create_symlinks(files, &ignore_files, &aux_config);
-			continue;
+	args_length != args.len()
+}
+
+fn create_statics(file_path: PathBuf, dest: PathBuf) -> bool {
+	if dest.exists() {
+		return false;
+	}
+
+	match copy(&file_path, &dest) {
+		Ok(_) => {
+			return true;
 		}
-
-		let dest = Path::new(&config.destination).join(file_name);
-
-		if dest.exists() && config.force {
-			match remove_file(&dest) {
-				Ok(()) => {
-					if config.verbose {
-						println!("Removing existing file {}", dest.display())
-					}
-				}
-				Err(e) => {
-					println!("Failed to remove existing file {}: {}", dest.display(), e);
-					continue;
-				}
-			}
+		Err(e) => {
+			println!(
+				"Failed to link {} to {}: {}",
+				file_path.display(),
+				dest.display(),
+				e
+			);
+			return false;
 		}
-
-		if config.verbose {
-			println!("Linking {} to {}", file_path.display(), dest.display());
-		}
-
-		match symlink(&file_path, &dest) {
-			Ok(_) => (),
-			Err(e) => {
-				println!(
-					"Failed to link {} to {}: {}",
-					file_path.display(),
-					dest.display(),
-					e
-				);
-				continue;
-			}
-		};
 	}
 }
 
-fn get_ignore_files(path: PathBuf) -> Vec<String> {
+fn create_symlinks(file_path: PathBuf, dest: PathBuf) -> bool {
+	match symlink(&file_path, &dest) {
+		Ok(_) => {
+			return true;
+		}
+		Err(e) => {
+			println!(
+				"Failed to link {} to {}: {}",
+				file_path.display(),
+				dest.display(),
+				e
+			);
+
+			return false;
+		}
+	}
+}
+
+fn get_ignore_files(path: &PathBuf) -> Vec<String> {
 	let mut ignore_files: Vec<String> = Vec::new();
 
 	let ignore_file_name = String::from(".dotzignore");
@@ -364,10 +319,14 @@ fn get_ignore_files(path: PathBuf) -> Vec<String> {
 		return ignore_files;
 	}
 
-	let ignore_file = fs::read_to_string(ignore_path).unwrap();
+	let ignore_file = read_to_string(ignore_path).unwrap();
 
 	for line in ignore_file.lines() {
-		ignore_files.push(line.trim().to_string());
+		let line = line.trim();
+		if line == "" {
+			continue;
+		}
+		ignore_files.push(line.to_string());
 	}
 
 	ignore_files
@@ -386,15 +345,16 @@ fn show_help() {
 	println!("-h, --help\tShow this help message");
 	println!("-f, --force\tForce overwrite of existing files");
 	println!("-s, --static\tCreate static files");
+	println!("-v, --version\tShow version");
 	println!("--verbose\tShow verbose output");
 	println!("");
 	println!("");
 	println!("Usage: dotz [options] [command] [path/] [destination]");
 	println!("");
 	println!("");
-	println!("[path] is the directory where the dotfiles are located");
-	println!("[repo] is the link to the git repository (only for repo mode and default path to clone is $HOME/.dotfiles)");
-	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME) \n\t(not configurable in repo mode)");
+	println!("[path] is the directory where the dotfiles are located or in repo mode the path where the dotfiles will be cloned to (optional defaults to $HOME/.dotfiles) make sure the directory is empty");
+	println!("[repo] is the link to the git repository");
+	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME)");
 	println!("");
 	println!("");
 	println!("Examples:");
@@ -403,6 +363,8 @@ fn show_help() {
 	println!("\t # dotz /home/user/.dotfiles/");
 	println!("\t # dotz .");
 	println!("\t # dotz repo https://github.com/zeroproject-0/.dotfiles.git");
+	println!("\t # dotz repo https://github.com/zeroproject-0/.dotfiles.git ./dotfiles");
+	println!("\t # dotz repo https://github.com/zeroproject-0/.dotfiles.git ./dotfiles ~/.config");
 	println!("\t # dotz -f -s --verbose repo https://github.com/zeroproject-0/.dotfiles.git");
 	println!("\t # dotz --help");
 }
