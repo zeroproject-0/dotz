@@ -1,3 +1,5 @@
+use dotz::errors::Errors;
+
 use std::collections::VecDeque;
 use std::env;
 use std::fs::{
@@ -7,31 +9,31 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug)]
 struct Config {
 	force: bool,
 	verbose: bool,
 	static_files: bool,
 }
 
-fn main() {
-	let mut args: VecDeque<String> = env::args().collect();
-	args.pop_front();
+fn main() -> Result<(), Errors> {
+	let mut args: VecDeque<String> = env::args().skip(1).collect();
 
 	if args.len() == 0 {
 		show_help();
-		return;
+		return Err(Errors::InvalidArgument {
+			message: String::from("No arguments provided"),
+		});
 	}
 
 	if args.contains(&String::from("-h")) || args.contains(&String::from("--help")) {
 		show_help();
-		return;
+		return Ok(());
 	}
 
 	if args.contains(&String::from("-v")) || args.contains(&String::from("--version")) {
 		const VERSION: &str = env!("CARGO_PKG_VERSION");
 		println!("v{}", VERSION);
-		return;
+		return Ok(());
 	}
 
 	let config = Config {
@@ -46,7 +48,9 @@ fn main() {
 		Some(home) => home.into_string().unwrap(),
 		None => {
 			println!("Could not find $HOME");
-			return;
+			return Err(Errors::InvalidPath {
+				message: String::from("Could not find $HOME"),
+			});
 		}
 	};
 
@@ -57,7 +61,9 @@ fn main() {
 			repo_link = repo;
 		} else {
 			show_help();
-			return;
+			return Err(Errors::RepositoryNotCloned {
+				message: String::from("No repository link provided"),
+			});
 		}
 	}
 
@@ -70,8 +76,11 @@ fn main() {
 				.canonicalize()
 				.unwrap()
 		} else {
+			println!("No path provided");
 			show_help();
-			return;
+			return Err(Errors::InvalidArgument {
+				message: String::from("No path provided"),
+			});
 		}
 	};
 
@@ -83,10 +92,9 @@ fn main() {
 				}
 			}
 			Err(_) => {
-				if config.verbose {
-					println!("Could not create {}", path.display());
-				}
-				return;
+				return Err(Errors::ErrorCreatingDirectory {
+					message: String::from(format!("Could not create {}", path.display())),
+				});
 			}
 		};
 	}
@@ -98,8 +106,9 @@ fn main() {
 	let destination = if let Some(dest) = args.pop_front() {
 		let dest = PathBuf::from(dest);
 		if !dest.exists() {
-			println!("Destination directory does not exist");
-			return;
+			return Err(Errors::InvalidPath {
+				message: String::from("Destination directory does not exist"),
+			});
 		}
 
 		dest.canonicalize().unwrap()
@@ -109,7 +118,9 @@ fn main() {
 
 	if args.len() > 0 {
 		show_help();
-		return;
+		return Err(Errors::InvalidArgument {
+			message: String::from("Too many arguments provided"),
+		});
 	}
 
 	if is_repo {
@@ -121,35 +132,50 @@ fn main() {
 					}
 				}
 				Err(_) => {
-					if config.verbose {
-						println!("Could not remove {}", path.display());
-					}
-					return;
+					return Err(Errors::ErrorRemovingDirectory {
+						message: String::from(format!("Could not remove {}", path.display())),
+					});
 				}
 			};
 		}
 
 		if !clone_repo(&repo_link, &path.to_str().unwrap().to_string()) {
-			return;
+			return Err(Errors::RepositoryNotCloned {
+				message: String::from("Could not clone repository"),
+			});
 		}
 	}
 
 	let ignore_files = get_ignore_files(&path);
 
+	let success;
+
 	match read_dir(path) {
 		Ok(files) => {
 			if config.static_files {
-				files_scope(&create_statics, files, &ignore_files, destination, &config);
+				success = files_scope(&create_statics, files, &ignore_files, destination, &config);
 			} else {
-				files_scope(&create_symlinks, files, &ignore_files, destination, &config);
+				success = files_scope(&create_symlinks, files, &ignore_files, destination, &config);
 			}
-			println!("Finished");
+
+			if success {
+				println!("Done!");
+			} else {
+				return Err(Errors::ErrorCreatingFile {
+					message: String::from("Failed to create dotfiles"),
+				});
+			}
 		}
 		Err(_) => {
+			println!("Could not read directory");
 			show_help();
-			return;
+			return Err(Errors::ErrorReadingDirectory {
+				message: String::from("Could not read directory"),
+			});
 		}
 	};
+
+	Ok(())
 }
 
 fn clone_repo(link: &String, dest: &String) -> bool {
@@ -183,9 +209,11 @@ fn files_scope<F>(
 	ignore_files: &Vec<String>,
 	destination: PathBuf,
 	config: &Config,
-) where
+) -> bool
+where
 	F: Fn(PathBuf, PathBuf) -> bool,
 {
+	let mut success = true;
 	for file in files {
 		let file = file.unwrap();
 		let file_path = file.path();
@@ -212,7 +240,7 @@ fn files_scope<F>(
 				Err(_) => {}
 			};
 
-			files_scope(func, files, ignore_files, dest, &config);
+			success = files_scope(func, files, ignore_files, dest, &config);
 			continue;
 		}
 
@@ -241,6 +269,7 @@ fn files_scope<F>(
 		}
 
 		if !func(file_path.to_owned(), dest.to_owned()) {
+			success = false;
 			println!(
 				"Failed to create file {} to {}",
 				file_path.display(),
@@ -249,6 +278,8 @@ fn files_scope<F>(
 			continue;
 		};
 	}
+
+	true && success
 }
 
 fn verify_argument(args: &mut VecDeque<String>, names: Vec<&str>) -> bool {
@@ -293,12 +324,11 @@ fn create_symlinks(file_path: PathBuf, dest: PathBuf) -> bool {
 		Ok(_) => {
 			return true;
 		}
-		Err(e) => {
+		Err(_) => {
 			println!(
-				"Failed to link {} to {}: {}",
+				"Failed to link {} to {}",
 				file_path.display(),
-				dest.display(),
-				e
+				dest.display()
 			);
 
 			return false;
@@ -349,12 +379,12 @@ fn show_help() {
 	println!("--verbose\tShow verbose output");
 	println!("");
 	println!("");
-	println!("Usage: dotz [options] [command] [path/] [destination]");
+	println!("Usage: dotz [options] [command] [repo] [path] [destination]");
 	println!("");
 	println!("");
-	println!("[path] is the directory where the dotfiles are located or in repo mode the path where the dotfiles will be cloned to (optional defaults to $HOME/.dotfiles) make sure the directory is empty");
-	println!("[repo] is the link to the git repository");
-	println!("[destination] is the directory where the dotfiles will be linked to (optional defaults to $HOME)");
+	println!("[path] \tis the directory where the dotfiles are located or in repo mode the path where the dotfiles will be cloned to (optional defaults to $HOME/.dotfiles) make sure the directory is empty");
+	println!("[repo] \tis the link to the git repository");
+	println!("[destination] \t is the directory where the dotfiles will be linked to (optional defaults to $HOME)");
 	println!("");
 	println!("");
 	println!("Examples:");
