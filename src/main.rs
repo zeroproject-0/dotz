@@ -386,7 +386,17 @@ fn get_ignore_files(path: &PathBuf) -> Vec<PathBuf> {
 }
 
 fn show_help() {
-	println!("dotz - A simple dotfile manager");
+	println!("       /$$             /$$              ");
+	println!("      | $$            | $$              ");
+	println!("  /$$$$$$$  /$$$$$$  /$$$$$$   /$$$$$$$$");
+	println!(" /$$__  $$ /$$__  $$|_  $$_/  |____ /$$/");
+	println!("| $$  | $$| $$  \\ $$  | $$       /$$$$/ ");
+	println!("| $$  | $$| $$  | $$  | $$ /$$  /$$__/  ");
+	println!("|  $$$$$$$|  $$$$$$/  |  $$$$/ /$$$$$$$$");
+	println!(" \\_______/ \\______/    \\___/  |________/");
+	println!("");
+	println!("");
+	println!("A simple dotfile manager");
 	println!("");
 	println!("");
 	println!("Commands:");
@@ -405,7 +415,7 @@ fn show_help() {
 	println!("Usage: dotz [options] [command] [repo] [path] [destination]");
 	println!("");
 	println!("");
-	println!("[path] \tis the directory where the dotfiles are located or in repo mode the path where the dotfiles will be cloned to (optional defaults to $HOME/.dotfiles) make sure the directory is empty");
+	println!("[path] \tis the directory where are located the dotfiles | in repo mode this directory will be where the repository will be cloned (optional defaults to $HOME/.dotfiles) make sure the directory is empty or not exist");
 	println!("[repo] \tis the link to the git repository");
 	println!("[destination] \t is the directory where the dotfiles will be linked to (optional defaults to $HOME)");
 	println!("");
