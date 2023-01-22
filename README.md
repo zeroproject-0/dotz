@@ -1,11 +1,14 @@
 # DOTZ
 
-dotz is a simple tool to manage dotfiles write in rust.
+Dotz is a simple tool to manage dotfiles write in rust.
+
+![dotz](docs/images/dotz_image.jpg)
 
 # Index
 
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Example of folder structure](#example-of-folder-structure)
 
 # Installation
 
@@ -23,7 +26,7 @@ For use dotz you need to transfer all your dotfiles that you want manage to a fo
 
 > ! Note: The folder must follow the same hierarchy as the one you want them to be installed in.
 
-Example of folder structure:
+## Example of folder structure:
 
 ```bash
 dotfiles/
@@ -63,13 +66,13 @@ Or you can use repo command for install the dotfiles from a repository of github
 dotz repo [github repository url]
 ```
 
-The default path for the dotfiles is "$HOME/.dotfiles" but you can change it with the following command:
+the default path where the repository will be cloned is "$HOME/.dotfiles" but you can change it with the following command:
 
 ```bash
 dotz repo [github repository url] [path to dotfiles folder]
 ```
 
-In this case the folder need to be empty or not exist (dotz will create the folder).
+> Node: In this case the folder need to be empty or not exist (dotz will create the folder).
 
 If you want to install the dotfiles in a different path you can use the following command:
 
@@ -79,8 +82,8 @@ dotz repo [github repository url] [path to dotfiles folder] [path to install dot
 
 for all the commands you can use the following options:
 
-```bash
--h, --help        Show this help message
+```
+-h, --help        Show help message
 -f, --force       Force overwrite of existing files
 -s, --static      Create static files
 -v, --version     Show version

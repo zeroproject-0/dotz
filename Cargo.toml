@@ -1,6 +1,6 @@
 [package]
 name = "dotz"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 authors = ["Andres Copeticona <contact@zeroproject.dev>"]
 license = "GPL-3.0"
@@ -11,7 +11,7 @@ documentation = "https://zeroproject.dev/dotz"
 readme = "README.md"
 keywords = ["dotfiles", "cli", "tool", "unix", "linux"]
 categories = ["command-line-utilities"]
-exclude = ["**/tests/**"]
+exclude = ["**/tests/**", "**/docs/**"]
 
 [dependencies]
 
