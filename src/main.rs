@@ -2,11 +2,9 @@ use dotz::errors::Errors;
 
 use std::collections::VecDeque;
 use std::env;
-use std::fs::{
-	copy, create_dir, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file, ReadDir,
-};
+use std::fs::{copy, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file};
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 struct Config {
@@ -14,7 +12,7 @@ struct Config {
 	verbose: bool,
 	static_files: bool,
 }
-// make compile error on windows machines
+
 #[cfg(target_os = "windows")]
 compile_error!("dotz only works on unix systems");
 
@@ -102,7 +100,7 @@ fn main() -> Result<(), Errors> {
 		};
 	}
 
-	if !path.exists() {
+	if !path.exists() || path.is_file() {
 		return Err(Errors::InvalidPath {
 			message: String::from(format!("Path {} does not exist", path.display())),
 		});
@@ -125,7 +123,7 @@ fn main() -> Result<(), Errors> {
 		PathBuf::from(home)
 	};
 
-	if !destination.exists() {
+	if !destination.exists() || destination.is_file() {
 		return Err(Errors::InvalidPath {
 			message: String::from("Destination directory does not exist"),
 		});
@@ -161,36 +159,94 @@ fn main() -> Result<(), Errors> {
 		}
 	}
 
-	let ignore_files = get_ignore_files(&path);
+	let ignore_paths = get_ignore_files(&path);
+
+	let mut ignore_files = ignore_paths.clone();
+	ignore_files.retain(|file| !file.is_dir());
+
+	let mut ignore_dirs = ignore_paths.clone();
+	ignore_dirs.retain(|file| file.is_dir());
+
+	let mut files = get_files(&path);
+
+	files.retain(|file| !ignore_files.contains(file));
+	files.retain(|file| !check_paths_contains_path(&ignore_dirs, file));
+
+	let mut dest_files: Vec<PathBuf> = Vec::new();
+
+	for file in &files {
+		let path = file.strip_prefix(&path).unwrap();
+		let path_buf = destination.join(path);
+		dest_files.push(path_buf);
+	}
 
 	let success;
 
-	match read_dir(path) {
-		Ok(files) => {
-			if config.static_files {
-				success = files_scope(&create_statics, files, &ignore_files, destination, &config);
-			} else {
-				success = files_scope(&create_symlinks, files, &ignore_files, destination, &config);
-			}
+	if config.static_files {
+		success = create_files(&create_statics, dest_files, files, &config);
+	} else {
+		success = create_files(&create_symlinks, dest_files, files, &config);
+	}
 
-			if success {
-				println!("Done!");
-			} else {
-				return Err(Errors::ErrorCreatingFile {
-					message: String::from("Failed to create dotfiles"),
-				});
-			}
-		}
-		Err(_) => {
-			println!("Could not read directory");
-			show_help();
-			return Err(Errors::ErrorReadingDirectory {
-				message: String::from("Could not read directory"),
-			});
-		}
-	};
+	if success {
+		println!("Done!");
+	} else {
+		return Err(Errors::ErrorCreatingFile {
+			message: String::from("Failed to create dotfiles"),
+		});
+	}
 
 	Ok(())
+}
+
+fn create_files<F>(func: &F, dest_files: Vec<PathBuf>, paths: Vec<PathBuf>, config: &Config) -> bool
+where
+	F: Fn(&PathBuf, &PathBuf) -> bool,
+{
+	let mut success = true;
+
+	for i in 0..dest_files.len() {
+		let mut ancestors = dest_files[i].ancestors();
+		ancestors.next();
+
+		if dest_files[i].exists() {
+			if config.force {
+				match remove_file(&dest_files[i]) {
+					Ok(_) => {
+						if config.verbose {
+							println!("Removed {}", dest_files[i].display());
+						}
+					}
+					Err(_) => {}
+				};
+			} else {
+				continue;
+			}
+		} else {
+			let dir_path = ancestors.next().unwrap();
+			if !dir_path.exists() {
+				match create_dir_all(dir_path) {
+					Ok(_) => {
+						if config.verbose {
+							println!("Created {}", ancestors.next().unwrap().display());
+						}
+					}
+					Err(_) => {}
+				};
+			}
+		}
+
+		if !func(&paths[i], &dest_files[i]) {
+			println!("Failed to create {}", dest_files[i].display());
+			success = false;
+		} else {
+			if config.verbose {
+				println!("Created {}", dest_files[i].display());
+			}
+		}
+	}
+
+	true && success
 }
 
 fn clone_repo(link: &String, dest: &String) -> bool {
@@ -218,83 +274,35 @@ fn clone_repo(link: &String, dest: &String) -> bool {
 	success
 }
 
-fn files_scope<F>(
-	func: &F,
-	files: ReadDir,
-	ignore_files: &Vec<String>,
-	destination: PathBuf,
-	config: &Config,
-) -> bool
-where
-	F: Fn(PathBuf, PathBuf) -> bool,
-{
-	let mut success = true;
-	for file in files {
+fn get_files(path: &PathBuf) -> Vec<PathBuf> {
+	let mut files = Vec::new();
+
+	for file in read_dir(path).unwrap() {
 		let file = file.unwrap();
 		let file_path = file.path();
-		let file_name = file_path.file_name().unwrap();
+		let file_type = file.file_type().unwrap();
 
-		if ignore_files.contains(&file_name.to_str().unwrap().to_string()) {
-			if config.verbose {
-				println!("Ignoring {}", file_path.display());
-			}
-			continue;
+		if file_type.is_dir() {
+			let mut dir_files = get_files(&file_path);
+			files.append(&mut dir_files);
+		} else {
+			files.push(file_path);
 		}
-
-		if file.file_type().unwrap().is_dir() {
-			let files = read_dir(&file_path).unwrap();
-
-			let dest = destination.join(file_name);
-
-			match create_dir(&dest) {
-				Ok(_) => {
-					if config.verbose {
-						println!("Created directory {}", dest.display());
-					}
-				}
-				Err(_) => {}
-			};
-
-			success = files_scope(func, files, ignore_files, dest, &config);
-			continue;
-		}
-
-		let dest = Path::new(&destination).join(file_name);
-
-		if dest.exists() && config.force {
-			match remove_file(&dest) {
-				Ok(()) => {
-					if config.verbose {
-						println!("Removing existing file {}", dest.display())
-					}
-				}
-				Err(_) => {
-					println!("Failed to remove existing file {}", dest.display());
-					continue;
-				}
-			}
-		}
-
-		if config.verbose {
-			println!(
-				"Creating file {} to {}",
-				file_path.display(),
-				dest.display()
-			);
-		}
-
-		if !func(file_path.to_owned(), dest.to_owned()) {
-			success = false;
-			println!(
-				"Failed to create file {} to {}",
-				file_path.display(),
-				dest.display(),
-			);
-			continue;
-		};
 	}
 
-	true && success
+	files
+}
+
+fn check_paths_contains_path(paths: &Vec<PathBuf>, path: &PathBuf) -> bool {
+	let path_str = path.to_str().unwrap();
+	for p in paths {
+		let current = p.to_str().unwrap();
+		if path_str.starts_with(current) {
+			return true;
+		}
+	}
+
+	false
 }
 
 fn verify_argument(args: &mut VecDeque<String>, names: Vec<&str>) -> bool {
@@ -313,7 +321,7 @@ fn verify_argument(args: &mut VecDeque<String>, names: Vec<&str>) -> bool {
 	args_length != args.len()
 }
 
-fn create_statics(file_path: PathBuf, dest: PathBuf) -> bool {
+fn create_statics(file_path: &PathBuf, dest: &PathBuf) -> bool {
 	if dest.exists() {
 		return false;
 	}
@@ -334,7 +342,7 @@ fn create_statics(file_path: PathBuf, dest: PathBuf) -> bool {
 	}
 }
 
-fn create_symlinks(file_path: PathBuf, dest: PathBuf) -> bool {
+fn create_symlinks(file_path: &PathBuf, dest: &PathBuf) -> bool {
 	match symlink(&file_path, &dest) {
 		Ok(_) => {
 			return true;
@@ -351,27 +359,28 @@ fn create_symlinks(file_path: PathBuf, dest: PathBuf) -> bool {
 	}
 }
 
-fn get_ignore_files(path: &PathBuf) -> Vec<String> {
-	let mut ignore_files: Vec<String> = Vec::new();
+fn get_ignore_files(path: &PathBuf) -> Vec<PathBuf> {
+	let mut ignore_files: Vec<PathBuf> = Vec::new();
 
-	let ignore_file_name = String::from(".dotzignore");
+	let ignore_file = path.join("./.dotzignore").canonicalize();
 
-	ignore_files.push(ignore_file_name.clone());
-
-	let ignore_path = path.join(ignore_file_name);
-
-	if !ignore_path.exists() {
+	if ignore_file.is_err() {
 		return ignore_files;
 	}
 
-	let ignore_file = read_to_string(ignore_path).unwrap();
+	ignore_files.push(ignore_file.unwrap());
+
+	let ignore_file = read_to_string(&ignore_files[0]).unwrap();
 
 	for line in ignore_file.lines() {
 		let line = line.trim();
-		if line == "" {
+		let file = path.join(line).canonicalize();
+		if line == "" || file.is_err() {
 			continue;
 		}
-		ignore_files.push(line.to_string());
+
+		let file_path = file.unwrap();
+		ignore_files.push(file_path);
 	}
 
 	ignore_files
@@ -426,8 +435,14 @@ mod tests {
 		let ignore_files = get_ignore_files(&path);
 
 		assert_eq!(ignore_files.len(), 2);
-		assert_eq!(ignore_files[0], ".dotzignore");
-		assert_eq!(ignore_files[1], "test");
+		assert_eq!(
+			ignore_files[0],
+			path.join(".dotzignore").canonicalize().unwrap()
+		);
+		assert_eq!(
+			ignore_files[1],
+			path.join("./.dot/test.conf").canonicalize().unwrap()
+		);
 	}
 
 	#[test]
