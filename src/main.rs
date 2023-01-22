@@ -14,6 +14,9 @@ struct Config {
 	verbose: bool,
 	static_files: bool,
 }
+// make compile error on windows machines
+#[cfg(target_os = "windows")]
+compile_error!("dotz only works on unix systems");
 
 fn main() -> Result<(), Errors> {
 	let mut args: VecDeque<String> = env::args().skip(1).collect();

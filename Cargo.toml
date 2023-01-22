@@ -4,13 +4,13 @@ version = "1.0.0"
 edition = "2021"
 authors = ["Andres Copeticona <contact@zeroproject.dev>"]
 license = "GPL-3.0"
+description = "A CLI tool to manage your dotfiles (unix only)"
 repository = "https://github.com/zeroproject-0/dotz"
-description = "A CLI tool to manage your dotfiles"
-keywords = ["dotfiles", "cli", "tool"]
-categories = ["command-line-utilities"]
 homepage = "https://zeroproject.dev/dotz"
 documentation = "https://zeroproject.dev/dotz"
 readme = "README.md"
+keywords = ["dotfiles", "cli", "tool", "unix", "linux"]
+categories = ["command-line-utilities"]
 exclude = ["**/tests/**"]
 
 [dependencies]
