@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::env;
 use std::fs::{copy, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file};
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 struct Config {
@@ -72,10 +72,9 @@ fn main() -> Result<(), Errors> {
 		PathBuf::from(path_arg)
 	} else {
 		if is_repo {
-			PathBuf::from(&home)
-				.join(".dotfiles")
-				.canonicalize()
-				.unwrap()
+			println!("No path provided, using default path ($HOME/.dotfiles)");
+			let path = PathBuf::from(&home).join(".dotfiles");
+			path
 		} else {
 			println!("No path provided");
 			show_help();
