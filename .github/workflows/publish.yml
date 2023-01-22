@@ -34,6 +34,7 @@ jobs:
 
   publish:
     name: Publish
+    needs: test
     environment: publish_crates
     runs-on: ubuntu-22.04
     strategy:
