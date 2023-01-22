@@ -2,7 +2,18 @@
 name = "dotz"
 version = "1.0.0"
 edition = "2021"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Andres Copeticona <contact@zeroproject.dev>"]
+license = "GPL-3.0"
+repository = "https://github.com/zeroproject-0/dotz"
+description = "A CLI tool to manage your dotfiles"
+keywords = ["dotfiles", "cli", "tool"]
+categories = ["command-line-utilities"]
+homepage = "https://zeroproject.dev/dotz"
+documentation = "https://zeroproject.dev/dotz"
+readme = "README.md"
+exclude = ["**/tests/**"]
 
 [dependencies]
+
+[dev-dependencies]
 assert_cli = "0.6.3"
