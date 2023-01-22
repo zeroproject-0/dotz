@@ -9,9 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  publish:
-    name: Publish
-    environment: publish_crates
+  test:
+    name: Test
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -27,8 +26,27 @@ jobs:
           fetch-depth: 0
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
 
+      - name: Build
+        run: cargo build --verbose
+
       - name: Test
         run: cargo test --verbose
+
+  publish:
+    name: Publish
+    environment: publish_crates
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
 
       - run: cargo publish --token ${CRATES_TOKEN}
         env:
