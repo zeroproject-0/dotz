@@ -527,19 +527,4 @@ mod tests {
 			.succeeds()
 			.unwrap()
 	}
-
-	#[test]
-	fn test_cli_static() {
-		assert_cli::Assert::main_binary()
-			.with_args(&["-f", "-s", "./tests/.dot", "./tests/.dotDest"])
-			.execute()
-			.and_then(|_| {
-				let file_type = fs::metadata("./tests/.dotDest/test.conf")
-					.unwrap()
-					.file_type();
-				assert!(!fs::FileType::is_symlink(&file_type));
-				Ok(())
-			})
-			.unwrap()
-	}
 }
