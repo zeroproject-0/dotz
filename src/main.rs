@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::env;
 use std::fs::{copy, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file};
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 struct Config {
