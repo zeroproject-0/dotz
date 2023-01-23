@@ -9,6 +9,7 @@ Dotz is a simple tool to manage dotfiles write in rust.
 - [Installation](#installation)
 - [Usage](#usage)
   - [Example of folder structure](#example-of-folder-structure)
+  - [.dotzignore](#ignoring-files)
 
 # Installation
 
@@ -88,4 +89,17 @@ for all the commands you can use the following options:
 -s, --static      Create static files
 -v, --version     Show version
 --verbose         Show verbose output
+```
+
+## Ignoring Files
+
+To ignore files or folders, dotz provides a .dotzignore file which is similar to git's .gitignore, in that file you can specify the files or folders you want to ignore such as the .git folder that is automatically generated when you create a repository.
+
+Example:
+
+```
+.git                # Ignore git folder
+.gitignore          # Ingore file .gitignore
+example/test.conf   # Ignore test.conf
+example/test        # Ignore Folder test
 ```
